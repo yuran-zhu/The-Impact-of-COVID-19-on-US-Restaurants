@@ -1,0 +1,7 @@
+App version 1.0: Daily
+
+App version 2.0: Weekly complete, no prediction part, include correlation part
+
+App version copy: Include correlation and prediction
+
+App version 3.0: Short-term Prediction

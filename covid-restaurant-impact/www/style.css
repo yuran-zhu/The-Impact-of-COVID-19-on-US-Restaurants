@@ -1,0 +1,19 @@
+/* logo */
+.main-header .logo {
+  position: fixed; 
+  overflow: visible;
+}
+
+/* navbar (rest of the header) */
+.skin-blue .main-header .navbar {
+  position: fixed; 
+  overflow: visible;
+  width: 84%;
+ 
+}        
+
+/* main sidebar */
+.main-sidebar {
+  position: fixed; 
+  overflow: visible;
+}

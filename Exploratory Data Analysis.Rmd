@@ -1,0 +1,866 @@
+---
+title: "Exploratory Data Analysis (July 6 Updated)"
+author: "Yuran Zhu"
+date: "7/6/2020"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r, echo=FALSE}
+#knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+```
+
+## US Restaurant Revenue Data (by States, Feb 17 - Jul 5)
+
+```{r}
+# Load data
+revenue <- read.csv("State_Split_Daily.csv")
+#str(revenue)
+
+# Change format for date
+revenue$Date <- as.Date(as.character(revenue$Date))
+revenue$Date.Week <- as.Date(as.character(revenue$Date.Week), "%d-%b-%y")
+## time.stamp <- seq.Date(as.Date("2020/2/17"), as.Date("2020/7/5"), "days")
+
+# First 6 rows
+kable(head(revenue))
+```
+
+
+```{r}
+# Daily revenues in 2019/2020 & YOY increase, by states
+us.rev.total <- revenue %>%
+  group_by(Date) %>%
+  summarize(Total.2019 = sum(Amount_2019),
+            Total.2020 = sum(Amount_2020),
+            Increase = (Total.2020 - Total.2019)/Total.2019) #%>%
+  #arrange(lubridate::ymd(Date))
+kable(head(us.rev.total))
+
+# Daily revenues in 2020 by options, by states
+us.rev.2020 <- revenue %>%
+  group_by(Date) %>%
+  summarize(Total.in = sum(Dine_In_2020),
+            Total.out = sum(Off_Prem_2020),
+            Total = sum(Amount_2020),
+            In.percent = Total.in/Total,
+            Out.percent = Total.out/Total) 
+kable(head(us.rev.2020))
+
+# Daily revenues in 2019 by options, by states
+us.rev.2019 <- revenue %>%
+  group_by(Date) %>%
+  summarize(Total.in = sum(Dine_In_2019),
+            Total.out = sum(Off_Prem_2019),
+            Total = sum(Amount_2019),
+            In.percent = Total.in/Total,
+            Out.percent = Total.out/Total) 
+
+```
+
+
+```{r}
+# Plot for daily revenues in 2019/2020
+ggplot(data = us.rev.total) +
+  geom_line(aes(x = Date, y = Total.2019, color = "2019")) +
+  geom_line(aes(x = Date, y = Total.2020, color = "2020")) +
+  labs(title = "Daily Revenue vs. Date by Year") +
+  scale_colour_manual(name = "Year", values=c("2019" = "blue", "2020" = "red"))
+
+# Plot for trend YOY %
+ggplot(data = us.rev.total, aes(x = Date, y = Increase*100)) +
+  geom_line() +
+  labs(title = "Daily Revenue Increase Year of Year (%)")
+
+# Plot for % by options  
+ggplot(data = us.rev.2020) +
+  geom_line(aes(x = Date, y = In.percent*100,  color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Out.percent*100, color = "Off-premise")) +
+  labs(y = "% of Daily Revenues", title = "% of 2020 Daily Revenues by Dining Options") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red"))
+
+ggplot(data = us.rev.2019) +
+  geom_line(aes(x = Date, y = In.percent*100, color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Out.percent*100, color = "Off-premise")) +
+  labs(y = "% of Daily Revenues", title = "% of 2019 Daily Revenues by Dining Options") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red"))
+```
+
+```{r}
+# For some states
+ca.rev <- revenue %>%
+  filter(State == "CA")
+ggplot(data = ca.rev) +
+  geom_line(aes(x = Date, y = Dine_In_2020_pct*100,  color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Off_Prem_2020_pct*100, color = "Off-premise")) +
+  labs(y = "% of Daily Revenues", title = "% of 2020 CA Daily Revenues by Dining Options") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red"))
+
+ny.rev <- revenue %>%
+  filter(State == "NY")
+ggplot(data = ny.rev) +
+  geom_line(aes(x = Date, y = Dine_In_2020_pct*100,  color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Off_Prem_2020_pct*100, color = "Off-premise")) +
+  labs(y = "% of Daily Revenues", title = "% of 2020 NY Daily Revenues by Dining Options") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red"))
+
+pa.rev <- revenue %>%
+  filter(State == "PA")
+ggplot(data = pa.rev) +
+  geom_line(aes(x = Date, y = Dine_In_2020_pct*100,  color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Off_Prem_2020_pct*100, color = "Off-premise")) +
+  labs(y = "% of Daily Revenues", title = "% of 2020 PA Daily Revenues by Dining Options") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red"))
+```
+
+```{r, fig.height=20, fig.width=12}
+# Plot for all 46 states included in the dataset
+ggplot(data = revenue) +
+  geom_line(aes(x = Date, y = Dine_In_2020_pct*100,  color = "Dine-in")) +
+  geom_line(aes(x = Date, y = Off_Prem_2020_pct*100, color = "Off-premise")) +
+  facet_wrap(~State, nrow = 12, ncol = 4) +
+  labs(y = "% of Daily Revenues", title = "% of 2020 US Daily Revenues by Dining Options (By States)") +
+  scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,10)) +
+  scale_colour_manual(name = "Options", values=c("Dine-in" = "blue", "Off-premise" = "red")) + 
+  theme(legend.position = "top")
+```
+
+
+```{r, fig.height=12, fig.width=12}
+ggplot(data = revenue, aes(x = Date, y = Total_Trend*100)) +
+  geom_line() +
+  facet_wrap(~State, nrow = 8, ncol = 6) +
+  scale_y_continuous(limits=c(-100, 170), breaks=seq(-100,170,50)) +
+  labs(y = "Increase Trend (%) of Daily Revenues", title = "2020 US Daily Revenue Increase Year of Year (%) (by States)") 
+
+```
+
+### Summary of Revenue Date
+
+```{r, fig.height=12, fig.width=10}
+summary(revenue)
+
+# Test normality
+# Log-transformation for large number
+log.revenue <- revenue
+for (i in c(4:7,9,10)) {
+  log.revenue[,i] = log(log.revenue[,i] )
+}
+# Calculate standarlized revenue
+std.revenue <- as.data.frame(scale(log.revenue[, 4:13]))
+
+par(mfrow = c(4,3))
+for (i in 1:10) {
+  qqnorm(std.revenue[, i],  main = colnames(std.revenue)[i])
+  abline(0,1) 
+}
+
+```
+
+## COVID-19 Data (Jan 22 - Jul 1)
+
+```{r}
+us.confirmed <- read.csv("time_series_covid19_confirmed_US.csv")
+us.deaths <- read.csv("time_series_covid19_deaths_US.csv")
+
+# Format time
+time.stamp <- seq.Date(as.Date("2020/1/22"), as.Date("2020/7/5"), "days")
+colnames(us.confirmed)[12:177] <- as.character(time.stamp)
+colnames(us.deaths)[13:178] <-as.character(time.stamp)
+
+# Tidy data, combine time series
+us.confirmed <- us.confirmed %>%
+  pivot_longer(12:ncol(us.confirmed),
+               names_to = "time", values_to = "confirmed")
+us.deaths <- us.deaths %>%
+  pivot_longer(13:ncol(us.deaths),
+               names_to = "time", values_to = "deaths")
+us.confirmed$time <- as.Date(us.confirmed$time)
+us.deaths$time <- as.Date(us.deaths$time)
+
+# Combine the confirmed and deaths data into single one, only for US
+us.combined <- left_join(us.confirmed, us.deaths[,c(11,13,14,12)],
+                         by = colnames(us.confirmed)[11:12]) %>%
+  filter(iso2 == "US") 
+
+# sum(is.na(us.combined$deaths) ==T)
+
+# Count all cases by time
+us.total.case <- us.combined %>%
+  group_by(time) %>%
+  summarize(confirmed = sum(confirmed),
+            deaths = sum(deaths))
+
+# Calculate daily-increase cases
+us.total.case <- mutate(us.total.case, confirmed.add = confirmed, deaths.add = deaths) 
+for (i in 2:nrow(us.total.case)) {
+  us.total.case[i,4] = us.total.case[i,2] - us.total.case[i-1,2] 
+  us.total.case[i,5] = us.total.case[i,3] - us.total.case[i-1,3] 
+}
+
+```
+
+
+### Plot Revenue and COVID-19 Data with Map
+
+```{r}
+# Add long and lat
+# Import US statey map data
+usa <- map_data("state")
+# str(usa)
+
+states.abbr<- read.csv("State_Abbreviation_Data.csv") %>%
+  mutate(state = tolower(State))  # convert to lower case for joining with map data
+
+state.names <- levels(as.factor(states.abbr$State))
+
+usa <- left_join(usa, states.abbr[, -2], by = c( "region" = "state"))
+colnames(usa)[7:8] <- c("State.name", "State")
+
+# Average daily revenue by states
+states.rev <- revenue %>%
+  group_by(State) %>%
+  summarize(Amount_2019 = mean(Amount_2019),
+            Amount_2020 = mean(Amount_2020),
+            Dine_In_2019 = mean(Dine_In_2019),
+            Off_Prem_2019 = mean(Off_Prem_2019),
+            Dine_In_2020 = mean(Dine_In_2020),
+            Off_Prem_2020 = mean(Off_Prem_2020),
+            Dine_In_2019_prop = Dine_In_2019 /Amount_2019,
+            Off_Prem_2019_prop = Off_Prem_2019 /Amount_2019,
+            Dine_In_2020_prop = Dine_In_2020 /Amount_2020,
+            Off_Prem_2020_prop = Off_Prem_2020 /Amount_2020)
+
+#revenue <- left_join(revenue, usa[usa$Code %in% levels(revenue$State), ], by = c("State" = "Code"))
+
+# Subset data for those states included in revenue data
+usa.selected <- usa[usa$State %in% levels(revenue$State), ]
+usa.selected$State <- as.factor(as.character((usa.selected$State)))
+
+# Combine with map data
+states.rev <- left_join(usa.selected, states.rev,  by = "State")
+```
+
+
+```{r}
+# Most recent case data, by State
+us.total <- us.combined %>%
+  filter(time == last(time)) %>%
+  group_by(Province_State) %>%
+  summarize(sum.confirmed = sum(confirmed, na.rm = TRUE),
+            sum.deaths = sum(deaths, na.rm = TRUE))
+us.total$Province_State = tolower(us.total$Province_State)
+
+# Join case statistics with map data
+us.total$Province_State = tolower(us.total$Province_State)
+us.total.map <- left_join(usa, us.total, by = c("region" = "Province_State"))
+
+```
+
+```{r}
+ggplot(data = us.total.map, aes(x = long, y = lat, group = group, fill = sum.confirmed)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", trans="log", 
+                       midpoint = log(median(us.total$sum.confirmed))) +
+  coord_map() + 
+  labs(title = "Confirmed Cases by US States", fill = "Total Confirmed",
+       x = "Longitude", y = "Latitude")
+
+ggplot(data = us.total.map, aes(x = long, y = lat, group = group, fill = sum.deaths)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", trans = "log", 
+                       midpoint = log(median(us.total$sum.deaths))) + 
+  coord_map() + 
+  labs(title = "Death Cases by US States", fill = "Total Deaths",
+       x = "Longitude", y = "Latitude")
+```
+
+```{r}
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill = Amount_2020)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", trans="log", 
+                       midpoint = log(median(states.rev$Amount_2020))) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue in 2020 by US States", 
+       fill = "Daily Revenue", x = "Longitude", y = "Latitude") +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill = Amount_2019)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", trans="log", 
+                       midpoint = log(median(states.rev$Amount_2019))) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue in 2019 by US States", 
+       fill = "Daily Revenue", x = "Longitude", y = "Latitude")  +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+```
+
+
+```{r}
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill = Dine_In_2020_prop)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", 
+                       midpoint = median(states.rev$Dine_In_2020_prop)) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue by Dine-in in 2020 by US States", 
+       fill = "Dine-In Proportion",
+       x = "Longitude", y = "Latitude") +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill =Off_Prem_2020_prop)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", 
+                       midpoint = median(states.rev$Off_Prem_2020_prop)) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue by Off-Premise in 2020 by US States", 
+       fill = "Off-premise Proportion",
+       x = "Longitude", y = "Latitude") +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+
+```
+
+```{r}
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill = Dine_In_2019_prop)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", 
+                       midpoint = median(states.rev$Dine_In_2019_prop)) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue by Dine-in in 2019 by US States", 
+       fill = "Dine-In Proportion",
+       x = "Longitude", y = "Latitude") +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+
+ggplot(data = states.rev, aes(x = long, y = lat, group = group, fill = Off_Prem_2019_prop)) + 
+  geom_polygon(color = "white", size=.1) + 
+  scale_fill_gradient2(low = "blue", mid = "grey", high = "red", 
+                       midpoint = median(states.rev$Off_Prem_2019_prop)) +
+  coord_map() + 
+  labs(title = "Average Daily Revenue by Off-Premise in 2019 by US States", 
+       fill = "Off-premise Proportion",
+       x = "Longitude", y = "Latitude") +
+  annotate(geom="text", x = -100, y = 50, label="Note: Data not avaible for Alaska, Hawaii, North Dakota, South Dakota, Wyoming", size = 2.5)
+```
+
+
+```{r}
+################
+## Process data to combine revenue and COVID -> Export csv.
+################
+
+# Subset for states included in the map data --> 51 states
+us.combined.2 <- us.combined %>%
+  filter(Province_State %in% levels(states.abbr$State)) 
+us.combined.2$Province_State <- as.factor(as.character(us.combined.2$Province_State))
+us.combined.2 <- left_join(us.combined.2, states.abbr[, -2], 
+                           by = c("Province_State" = "State"))
+colnames(us.combined.2)[c(12,16)] <- c("Date", "State")  # change colnames, easier combine
+
+# Subset for states and dates included in revenue data --> 46 states, 136 days
+us.combined.3 <- us.combined.2 %>%
+  filter(Date %in% revenue$Date[1:140],
+         State %in% levels(revenue$State)) %>%
+  group_by(State) %>%
+  mutate(sum.population = sum(Population)/140)
+
+# Combine county data in every state
+cases.total <- us.combined.3 %>%
+  group_by(Province_State, State, Date) %>% 
+  summarize(confirmed = sum(confirmed),
+            deaths = sum(deaths),
+            population = mean(sum.population))
+  
+# Calculate daily-increase cases
+cases.total <- mutate(cases.total, confirmed.add = confirmed, deaths.add = deaths) 
+
+for (i in setdiff(2:nrow(cases.total), seq(141, nrow(cases.total), 140))) {
+  cases.total[i,7] = cases.total[i,4] - cases.total[i-1,4] 
+  cases.total[i,8] = cases.total[i,5] - cases.total[i-1,5] 
+}
+
+# Remove factor levels for states not included
+cases.total$State <- as.factor(as.character(cases.total$State))
+cases.total$Province_State <- as.factor(as.character(cases.total$Province_State))
+
+# Export and save csv
+write.table(cases.total,"cases_cleaned.csv",row.names=FALSE,col.names=TRUE,sep=",")
+
+# Combine data and export
+rev.case <- left_join(revenue, cases.total, by = c("Date", "State"))
+write.table(rev.case,"cases_and_revenue_46states.csv",row.names=FALSE,col.names=TRUE,sep=",")
+
+```
+
+
+### Plot Time Series Cases for Top 5 states w/ most/least cases
+
+```{r}
+cases.total %>% 
+  filter(Date == as.Date("2020-07-05")) %>%
+  arrange(confirmed)
+# Top 5 most: FL, NJ, TX, CA, NY
+# Top 5 least: MT, VT, WV, ME, NH
+
+ggplot(data = cases.total[cases.total$State %in% c( "NJ", "TX", "FL", "CA", "NY"),], 
+       aes(x = Date, y = confirmed, color = Province_State)) +
+  geom_line() +
+  labs(title = "Time-Series COVID-19 Confirmed Cases in Top 5 States with Most Cases") 
+
+ggplot(data = cases.total[cases.total$State %in% c( "MT", "VT", "WV", "ME", "NH"),], 
+       aes(x = Date, y = confirmed, color = Province_State)) +
+  geom_line() +
+  labs(title = "Time-Series COVID-19 Confirmed Cases in Top 5 States with Least Cases") 
+
+ggplot(data = cases.total[cases.total$State %in% c( "PA", "IL", "MA", "NJ", "NY"),], 
+       aes(x = Date, y = deaths, color = Province_State)) +
+  geom_line() +
+  labs(title = "Time-Series COVID-19 Deaths in Top 5 States with Most Cases") 
+
+ggplot(data = cases.total[cases.total$State %in% c( "MT", "VT", "ID", "WV", "ME"),], 
+       aes(x = Date, y = deaths, color = Province_State)) +
+  geom_line() +
+  labs(title = "Time-Series COVID-19 Deaths in Top 5 States with Least Cases") 
+
+```
+
+### Plot Daily Increased Cases
+
+```{r, fig.height=20, fig.width=12,}
+ggplot(data = cases.total, aes(x = Date, y = confirmed.add)) +
+  geom_line() +
+  facet_wrap(~ Province_State, nrow = 12, ncol = 4) + 
+  labs(title = "Daily Increased COVID-19 Confirmed Cases (By States)") 
+  
+ggplot(data = cases.total, aes(x = Date, y = deaths.add)) +
+  geom_line() +
+  facet_wrap(~ Province_State, nrow = 12, ncol = 4) + 
+  labs(title = "Daily Increased COVID-19 Deaths (By States)") 
+```
+
+
+## Plot Revenue and COVID together
+
+```{r, fig.height=20, fig.width=12, echo=F, eval=F}
+coeff <- 4000
+ggplot(data = rev.case, aes(x = Date)) +
+  geom_line(aes(y = Dine_In_2020_pct*100,  color = "Dine-in")) +
+  geom_line(aes(y = Off_Prem_2020_pct*100, color = "Off-premise")) +
+  geom_line(aes(y = confirmed/coeff, color = "Confirmed Cases")) +
+  facet_wrap(~Province_State, nrow = 12, ncol = 4) +
+  scale_y_continuous(
+    limits=c(0, 100), breaks=seq(0,100,10),
+    
+    # Features of the first axis
+    name = "% of Daily Revenues",
+    # Add a second axis and specify its features
+    sec.axis = sec_axis(~.*coeff, name="Number of Confirmed Cases")
+  ) + 
+  labs(title = "% of 2020 US Daily Revenues by Dining Options and Number of COVID-19 Confirmed Cases (By States)") +
+  scale_colour_manual(name = "", values=c("Dine-in" = "blue", "Off-premise" = "red",
+                                          "Confirmed Cases" = "black")) + 
+  theme(legend.position = "top")
+```
+
+```{r, fig.height=30, fig.width=13, fig.cap="Figure Above: % of 2020 US Daily Revenues by Dining Options and Total Number of COVID-19 Confirmed Cases (By States)"}
+#op<-par(no.readonly=TRUE)
+#par(op)
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1, 6440, by = 140)) {
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),11]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case$Province_State[i])
+  #par(new = TRUE)
+  #plot(x = rev.case[i:(i+135),2] , y = rev.case[i:(i+135),12]*100, axes=FALSE,
+       #xlab="", ylab="", type = "l", col = "red")
+  par(new = TRUE)
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),15], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case[i:(i+139),15])))
+}
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Dine-in Percentage (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text="Number of Confirmed Cases (red)",side=4,line=1,cex=1,outer=TRUE)
+```
+
+
+###  % of Revenue by Dine-in vs. Daily Deaths
+
+```{r, fig.height=30, fig.width=13, fig.cap="% of 2020 US Daily Revenues by Dine-in and Number of Daily Increased COVID-19 Deaths (By States)"}
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1, 6440, by = 140)) {
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),11]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case$Province_State[i])
+ 
+  par(new = TRUE)
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),19], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case[i:(i+139),19])))
+}
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Dine-in (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text="Number of Daily Increased Deaths (red)",side=4,line=1,cex=1,outer=TRUE)
+
+```
+
+
+###  % of Revenue by Dine-in vs. Daily Confirmed Cases
+
+```{r, fig.height=30, fig.width=13, fig.cap="Figure Above: % of 2020 US Daily Revenues by Dine-in and Number of Daily Increased COVID-19 Confirmed Cases (By States)"}
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1, 6440, by = 140)) {
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),12]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case$Province_State[i])
+ 
+  par(new = TRUE)
+  plot(x = rev.case[i:(i+139),2] , y = rev.case[i:(i+139),18], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case[i:(i+139),18])))
+}
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Off-premise (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text="Number of Daily Increased Confirmed Cases (red)",side=4,line=1,cex=1,outer=TRUE)
+```
+
+
+### Weekly Data for Two
+
+```{r}
+time.pd <- seq(as.Date("2020/2/17"), as.Date("2020/7/5"), "days")
+rev.case.2 <- rev.case %>%
+  filter(Date %in% time.pd)
+
+rev.case.2 <- mutate(rev.case.2,
+         Weekly.dine.in.2020 = 0,
+         Weekly.confirmed = 0,
+         Weekly.deaths = 0,
+         Weekly.revenue = 0)
+
+
+for (i in seq(1,nrow(rev.case.2), by = 7)) {
+  rev.case.2[i,20] = sum(rev.case.2[i:(i+6), 7]/sum(rev.case.2[i:(i+6), 5]))
+  rev.case.2[i,21]  = sum(rev.case.2[i:(i+6), 18])
+  rev.case.2[i,22]  = sum(rev.case.2[i:(i+6), 19])
+  rev.case.2[i,23] = sum(rev.case.2[i:(i+6), 5])
+}
+
+# i = 29
+rev.case.week <-rev.case.2 %>%
+  filter(Weekly.dine.in.2020!= 0)
+```
+
+
+```{r, fig.height=30, fig.width=13, fig.cap="Figure Above: % of 2020 US Weekly Revenues by Dine-in and Number of Weekly Increased COVID-19 Confirmed Cases"}
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1, 920, by = 20)) {
+  plot(x = rev.case.week[i:(i+19),2] , y = rev.case.week[i:(i+19),20]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case.week$Province_State[i])
+ 
+  par(new = TRUE)
+  plot(x = rev.case.week[i:(i+19),2] , y = rev.case.week[i:(i+19),21], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case.week[i:(i+19),21])))
+}
+
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Dine-in (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text="Number of Weekly Increased Confirmed Cases (red)",side=4,line=1,cex=1,outer=TRUE)
+
+```
+
+```{r}
+# Correlations btw pct & increased confirmed
+# Select for CA, FL, LA, MA, NY, NI, TX
+correlation <- rep(0,46)
+for (i in 1:46) {
+  correlation[i] <- cor(rev.case.week[((i-1)*18+1):((i-1)*18+18), 20], rev.case.week[((i-1)*18+1):((i-1)*18+18), 21])
+}
+
+correlation[match(c("CA", "FL", "LA", "MA", "NY", "NJ", "TX"), levels(rev.case.week$State))]
+
+```
+
+
+
+```{r, fig.height=30, fig.width=13, fig.cap="Figure Above: % of 2020 US Weekly Revenues by Dine-in and Number of Weekly Increased COVID-19 Deaths"}
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1,920, by = 20)) {
+  plot(x = rev.case.week[i:(i+19),2] , y = rev.case.week[i:(i+19),20]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case.week$Province_State[i])
+ 
+  par(new = TRUE)
+  plot(x = rev.case.week[i:(i+19),2] , y = rev.case.week[i:(i+19),22], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case.week[i:(i+19),22])))
+}
+
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Dine-in (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text="Number of Weekly Increased Deaths (red)",side=4,line=1,cex=1,outer=TRUE)
+
+```
+
+```{r}
+# Correlations btw pct & increased deaths 
+# Select for CA, FL, LA, MA, NY, NI, TX
+correlation.2 <- rep(0,46)
+for (i in 1:46) {
+  correlation.2[i] <- cor(rev.case.week[((i-1)*18+1):((i-1)*18+18), 20], rev.case.week[((i-1)*18+1):((i-1)*18+18), 22])
+}
+
+correlation.2[match(c("CA", "FL", "LA", "MA", "NY", "NJ", "TX"), levels(rev.case.week$State))]
+
+```
+
+
+
+## Mobility Data (From: Google & Apple)
+
+```{r}
+mobility <- read.csv("Global_Mobility_Report.csv")
+us.mob.trend <- read.csv("us_apple.csv")
+
+#str(mobility)
+#str(us.mob.trend)
+
+# Change format for date
+mobility$date <- as.Date(as.character(mobility$date))
+us.mob.trend$date <- as.Date(as.character(us.mob.trend$date))
+
+
+us.mob <- mobility[,c(1,3,4,5,7,8,13)] %>%
+  filter(country_region_code == "US")
+
+us.total.mob <- us.mob[1:142,]
+colnames(us.total.mob)[6:7] <- c("retail_and_recreation_pct", "residential_pct")
+kable(head(us.total.mob[,5:7])) 
+
+ggplot(data = us.total.mob) +
+  geom_line(aes(x = date, y = retail_and_recreation_pct,
+                color = "Retail & Recreation")) +
+  geom_line(aes(x = date, y = residential_pct,
+                color = "Residential")) +
+  scale_colour_manual(name = "Types", 
+                      values=c("Retail & Recreation" = "blue", "Residential" = "red")) +
+  labs(y = "Percent change", 
+       title = "Mobility Percent Change in US (Feb 15, 2020 - Jun 27, 2020)")
+```
+
+- **Finding: Similar trends of `Retail_and_Recreation` and `Daily Revenues Increase`.**
+
+
+
+```{r}
+us.mob.trend <- us.mob.trend %>%
+  pivot_longer(cols = colnames(us.mob.trend)[3:5],
+  names_to = "Type")
+kable(head(us.mob.trend))
+
+ggplot(data = us.mob.trend, aes(x = date, y = value, group = Type)) +
+  geom_line(aes(linetype = Type, color = Type))+
+  geom_hline(yintercept = 100, color = "dark green", linetype = "dashed", size = 1)+
+  scale_colour_manual(values = c("blue",  "black", "red")) +
+  scale_linetype_manual(values = c("solid", "dotted", "dashed")) +
+  labs(y = "Mobility trend", title = "Mobility Trend (%) in US (Jan 13, 2020 - Jul 1, 2020)")
+
+```
+
+
+```{r}
+# Goolge mobility by states
+us.mob.states <- us.mob %>%
+  filter(iso_3166_2_code != "",
+         sub_region_1 %in% rev.case$Province_State) %>%
+  left_join(states.abbr[, c(1,3)], by = c("sub_region_1"= "State"))
+
+# str(us.mob.states)
+```
+
+### Plot Revenue & Mobility
+
+```{r}
+rev.case.mob <- rev.case.2 %>%
+  filter(Date %in% us.mob.states$date) %>%
+  left_join(us.mob.states[, 5:8], by = c("State" = "Code", "Date"= "date"))
+
+write.table(rev.case.mob,"cases_revenue_mob_46states.csv",row.names=FALSE,col.names=TRUE,sep=",")
+```
+
+
+```{r, fig.height=30, fig.width=13, fig.cap="Figure Above: % of 2020 US Daily Revenues by Dining Options and Mobility Trend for Recreation (By States)"}
+#op<-par(no.readonly=TRUE)
+#par(op)
+par(oma=c(2,2,0,4),mar=c(4,4,2,2),mfrow=c(12,4),pch=16)
+
+for (i in seq(1, 6072, by = 140)) {
+  plot(x = rev.case.mob[i:(i+139),2] , y = rev.case.mob[i:(i+139),11]*100, 
+       xlab="", ylab="", type = "l", col = "blue", 
+       main = rev.case.mob$Province_State[i])
+  #par(new = TRUE)
+  #plot(x = rev.case[i:(i+135),2] , y = rev.case[i:(i+135),12]*100, axes=FALSE,
+       #xlab="", ylab="", type = "l", col = "red")
+  par(new = TRUE)
+  plot(x = rev.case.mob[i:(i+139),2] , y = rev.case.mob[i:(i+139),24], axes=FALSE,
+       xlab="", ylab="", type = "l", col = "red")
+  axis(side = 4, pretty(range(rev.case.mob[i:(i+139),24])))
+}
+
+mtext(text="Date",side=1,line=0,cex=1, outer=TRUE)
+mtext(text="Dine-in Percentage (blue)",side=2,line=0,cex=1,outer=TRUE)
+mtext(text=" Mobility Trend of Recreation (red)",side=4,line=1,cex=1,outer=TRUE)
+
+```
+
+
+
+
+## Stocks Data
+
+```{r}
+stocks <- read.csv("Stocks_data.csv")[-c(1:6),]
+
+stocks[,1] <- as.Date(as.character(stocks[,1]))
+for (i in 2:23) {
+  stocks[,i] <- as.double(as.character(stocks[,i]))
+}
+# str(stocks) 
+```
+
+
+```{r, fig.height=12, fig.width=10}
+companies <- c("McDonald's", "Starbucks", "YUM! Brands", "Chipotle Mexican Grill, Inc.",
+               "Restaurant Brands International Inc.", "Yum China Holdings Inc.",
+               "Darden Restaurants, Inc.", "Domino's Pizza Inc.", "Dunkin' Brands Group Inc.", 
+               "Wendy's Co.", "Cheesecake Factory Inc.")
+par(mfrow = c(4,3))
+for (i in seq(2, 23, by = 2)) {
+  plot(x = stocks[1:118,1] , y = stocks[1:118,i], xlab="Date", ylab="Price", type = "l", col = "red",
+       main = companies[i/2])
+  #mtext("Price",side=2, line=-1, col = "red")
+  par(new = TRUE)
+  plot(x = stocks[1:118,1] , y = stocks[1:118,i+1], xlab="",ylab="", axes=FALSE, type = "l", col = "blue")
+  axis(4,pretty(range(stocks[1:118,i+1])))
+  #mtext("Volume",side=4, line=-1, col = "blue")
+}
+```
+
+- **Finding: Similar trends of `Price` for 9 companies (except Yum China & Donimo's Pizza).**
+
+
+## Explore Correlations
+
+```{r}
+period.1 <- revenue$Date[1:140]
+period.2 <- seq(as.Date("2020/1/13"), as.Date("2020/7/1"), "days") #us.mob$date[1:142]
+period.com <- period.1[period.1 %in% period.2]
+data.com <- us.rev.total %>%
+  filter(Date %in% period.com)
+
+data.com <- data.com %>%
+  mutate(In.percent.2020 = us.rev.2020$In.percent[us.rev.2020$Date %in% period.com],
+         Out.percent.2020 = us.rev.2020$Out.percent[us.rev.2020$Date %in% period.com],
+         Recreation.mob = us.total.mob$retail_and_recreation_pct[us.total.mob$date %in% period.com],
+         Residential.mob = us.total.mob$residential_pct[us.total.mob$date %in% period.com],
+         Drive.trend = us.mob.trend$value[us.mob.trend$Type=="driving" & us.mob.trend$date %in% period.com],
+         Transit.trend = us.mob.trend$value[us.mob.trend$Type=="transit" & us.mob.trend$date %in% period.com],
+         Walk.trend = us.mob.trend$value[us.mob.trend$Type=="walking" & us.mob.trend$date %in% period.com])
+```
+
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- (cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = pmax(1, cex.cor *abs(r)))
+}
+
+# Use panel.cor to show correlations below the diagonal
+pairs(data.com[, c("Total.2020", "Increase", "In.percent.2020", "Out.percent.2020",
+                   "Recreation.mob", "Residential.mob", "Drive.trend", "Transit.trend", "Walk.trend")], 
+      lower.panel = panel.cor)
+```
+
+```{r}
+# Combine COVID data: daily added cases
+
+period.3 = us.mob$date[1:142]
+period.com.2 <- period.1[period.1 %in% period.3]
+data.com.2 <- us.rev.total %>%
+  filter(Date %in% period.com.2)
+
+data.com.2 <- data.com.2 %>%
+  mutate(In.percent.2020 = us.rev.2020$In.percent[us.rev.2020$Date %in% period.com.2],
+         Out.percent.2020 = us.rev.2020$Out.percent[us.rev.2020$Date %in% period.com.2],
+         Recreation.mob = us.total.mob$retail_and_recreation_pct[us.total.mob$date %in% period.com.2],
+         Residential.mob = us.total.mob$residential_pct[us.total.mob$date %in% period.com.2],
+         confirmed = us.total.case$confirmed.add[us.total.case$time %in% period.com.2],
+         deaths = us.total.case$deaths.add[us.total.case$time %in% period.com.2])
+```
+
+```{r}
+pairs(data.com.2[, c("Total.2020", "Increase", "In.percent.2020", "Out.percent.2020",
+                     "Recreation.mob", "Residential.mob",  "confirmed", "deaths" )], 
+      lower.panel = panel.cor)
+```
+
+
+```{r}
+# Add stocks data to see correlation
+
+period.com.3 <- period.com.2[period.com.2 %in% stocks[1:118,1]]
+
+data.com.3 <- data.com.2 %>%
+  filter(Date %in% period.com.3) %>%
+  mutate(Mcd.price = stocks[1:118,2][stocks[1:118,1] %in% period.com.2],
+         Sbux.price = stocks[1:118,4][stocks[1:118,1] %in% period.com.2])
+```
+
+```{r}
+pairs(data.com.3[, c("Total.2020", "Increase", "In.percent.2020", "Out.percent.2020",
+                     "Recreation.mob", "Residential.mob", "Mcd.price", "Sbux.price")], 
+      lower.panel = panel.cor)
+```
+
+
+```{r, fig.height=6, fig.width=10, echo=F,eval=F}
+ggplot(data= revenue, aes(x = State, y = Amount_2020 )) +
+  geom_boxplot()
+
+ggplot(data= revenue, aes(x = State, y = Off_Prem_2020_pct)) +
+  geom_boxplot()
+
+ggplot(data= revenue, aes(x = Date, y = Off_Prem_2020_pct, group = Date)) +
+  geom_boxplot()
+```
+
+

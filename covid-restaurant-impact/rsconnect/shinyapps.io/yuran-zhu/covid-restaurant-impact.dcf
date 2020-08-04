@@ -1,0 +1,13 @@
+name: covid-restaurant-impact
+title: covid-restaurant-impact
+username:
+account: yuran-zhu
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2557453
+bundleId: 3448269
+url: https://yuran-zhu.shinyapps.io/covid-restaurant-impact/
+when: 1595983692.90619
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: app copy_20200725.R|app copy_20200726_no change.R|app copy_728.R|App Version Mgmt.txt|app_20200726_welcome page.R|App Copy/.DS_Store|App Copy/app copy.R|App Copy/app version 1.0.R|App Copy/app version 2.0.R|App Copy/app version 3.0.R|Old Data/.DS_Store|Old Data/cases_revenue_mob_46states.csv|Old Data/long_term_pct_2020_plot_data.csv|Old Data/long_term_pred_amount_2020_plot_data.csv|Old Data/weekly_data_avg_full.csv|www/.DS_Store
