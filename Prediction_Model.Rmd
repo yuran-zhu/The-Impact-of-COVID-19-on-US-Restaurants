@@ -1,0 +1,1038 @@
+---
+title: "Prediction Model"
+author: "Yuran Zhu"
+date: "7/23/2020"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+```{r}
+library(tidyverse)
+library(plotly)
+library(ggplot2)
+library(factoextra)
+library(DAAG)
+```
+
+
+# Read data
+
+## Already aggregated data
+
+```{r}
+weekly.data <- read.csv("weekly_data_avg_full_updated.csv") 
+#str(weekly.data)
+weekly.data$Date <- as.Date(weekly.data$Date)
+#colnames(weekly.data)
+weekly.data <- weekly.data %>%
+  mutate(Dine_In_2019_weekly_pct = Dine_In_2019_weekly/Amount_2019_weekly) %>%
+  select(1:9,29,10,12:21)
+```
+
+## Revenue 
+
+```{r}
+rev.sum <- read.csv("Previsous_year_Revenue_weekly_bystate.csv") %>%
+  mutate(Amount_2019_weekly = Sum.of.Amount_Previous_year/7,
+         Dine_In_2019_weekly = Sum.of.dine_in_Previous_year/7)
+str(rev.sum)
+rev.sum$Week <- as.Date(as.character(rev.sum$Week), format = "%m/%d/%y")
+rev <- rev.sum[,c(2,1,5,6)] %>%
+  arrange(State, Week) %>%
+  filter(Week <= as.Date("2020-8-3")) %>% # only subset for 1 month prediction
+  mutate(Dine_In_2019_weekly_pct = Dine_In_2019_weekly/Amount_2019_weekly)
+```
+
+
+## Case 
+
+```{r}
+# case prediction
+case <- read.csv("confirmed case prediction.csv")
+str(case)
+case$Day <- as.Date(as.character(case$Day ))
+```
+
+## Mobility
+
+```{r}
+mob <- read.csv("States_Mobility_new.csv")   
+```
+
+```{r}
+# moving avg mobility data
+mob.avg <- read.csv("residential_mobility_3weeks.csv")[,c(3,1,2)]
+mob.avg$Date <-  as.Date(as.character(mob.avg$Date ), format = "%m/%d/%y")
+```
+
+```{r}
+new.mob <- weekly.data %>% 
+  filter(Date == as.Date("2020-7-13")) %>%
+  select(1,2,19) %>%
+  rbind(mob.avg) %>%
+  arrange(State, Date)
+```
+
+
+## WEI
+
+```{r}
+wei.new <- read.csv("WEI_new.csv")
+wei.new$Date <- as.Date(as.character(wei.new$Date))
+new.wei <- wei.new
+
+i = 0
+for (i in 1:45) {
+  new.wei <- rbind(new.wei, wei.new)
+}
+```
+
+
+## WEI Data
+
+```{r}
+wei <- read.csv("WEI.csv")
+wei$Date <- as.Date(as.character(wei$Date))
+```
+
+```{r}
+weekly.data <- weekly.data %>%
+  left_join(wei, by = c("Date" = "Date"))
+
+#save
+write.table(weekly.data, "weekly data plus wei.csv", col.names = T, sep = ",")
+```
+
+
+```{r}
+seen.data <- weekly.data %>%
+  filter(Date < as.Date("2020-7-13"))  # select seen data, before the week 2020/7/13
+
+colnames(seen.data)
+
+reg.data<- seen.data[, c(1,2,4:7,10,11,16,19,21,22)]
+colnames(reg.data)   # select import columns for regression
+
+# log transformation
+for (i in c(3:6)) {
+  reg.data[,i] <- log(reg.data[,i])
+}
+
+```
+
+# PCA and Regression 
+
+## Train and Test for Historital Data (dine-in-pct)
+
+```{r}
+colnames(reg.data)
+pca.data.1 <- reg.data[,-c(1:6,8)]  # select columns for PCA (dine-in)
+colnames(pca.data.1)
+str(pca.data.1)
+```
+
+```{r}
+res.pca <- prcomp(pca.data.1, scale = TRUE)
+fviz_eig(res.pca)
+```
+
+```{r}
+fviz_pca_var(res.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+```{r}
+eig.val <- get_eigenvalue(res.pca)
+
+# Results for Variables
+res.var <- get_pca_var(res.pca)
+#res.var$coord          # Coordinates
+#res.var$contrib        # Contributions to the PCs
+#res.var$cos2           # Quality of representation 
+# Results for individuals
+res.ind <- get_pca_ind(res.pca)
+#res.ind$coord          # Coordinates
+#res.ind$contrib        # Contributions to the PCs
+#res.ind$cos2           # Quality of representation 
+
+# New data for storing PCA components
+new.data <- as.data.frame(res.ind$coord[,1:5] ) %>%
+  cbind(Dine_In_2020_weekly_pct =reg.data$Dine_In_2020_weekly_pct)
+```
+
+
+```{r}
+set.seed(1)
+train <- sample(1:966, 773)
+train.data <- new.data[train,]
+test.data <- new.data[-train,]
+```
+
+
+```{r}
+model.1 <- lm(Dine_In_2020_weekly_pct ~., data = train.data)
+summary(model.1)
+```
+
+### Plot True vs. Predicted
+
+```{r}
+pred.1 <- predict(model.1, test.data, interval = "confidence")
+
+result.1 <- data.frame(dine.in.pct =test.data$Dine_In_2020_weekly_pct, 
+                       pred.1 = pred.1[,1],
+                       Date = seen.data[-train,]$Date) %>%
+  arrange(dine.in.pct)
+
+ggplot(data = result.1, aes(x =Date)) +
+  geom_point(aes( y = dine.in.pct)) + 
+  geom_point(aes( y = pred.1, color = "pred.2")) +
+  scale_colour_manual(name = "Options", values=c("pred.1" = "blue", "pred.2" = "red"))
+```
+
+### Cross Validation
+
+```{r}
+cv.lm(data = test.data, model.1,
+              m = 10, dots = FALSE, seed = 29, plotit = c("Observed","Residual"),
+              legend.pos="topleft", printit = TRUE)
+
+```
+
+
+## Use PCA Regression for Predicting 2020 Dine-in Revenues in 4 weeks 
+
+```{r}
+one.week.new <- weekly.data[weekly.data$Date >= as.Date("2020-7-13"),]
+colnames(one.week.new)
+
+# change colnames(case) for rbind
+colnames(case)[c(3,2,1,4)] <- colnames(one.week.new)[c(1,2,12,16)]
+# new case data for 1 month
+new.case <- rbind(one.week.new[,c(1,2,12,16)], case[,c(3,2,1,4)]) %>%
+  arrange(State, Date) %>%
+  filter(State %in% levels(one.week.new$State))
+```
+
+```{r}
+new.rev <- rev %>%
+  filter(Week %in% new.case$Date)
+```
+
+```{r}
+# new data: revenue, case, mob
+new.data <- left_join(new.rev, new.case, by = c("State" = "State", "Week" = "Date"))  %>%
+   cbind(WEI = new.wei[,2])
+colnames(new.data)[2] <- "Date"
+new.reg.data <- new.data
+
+for (i in c(3,4)) {
+  new.reg.data[,i] = log(new.reg.data[,i])
+}
+```
+
+
+```{r}
+# select one mob border and combine with other variables (including amount_2019 and dine_in_2019)
+# For 2 pca, select either amount_2019 or dine_in_2019 from new.pca.data -> .a/.b
+# min, 25, 50, 75, max -> 1,2,3,4,5
+new.pca.data.1 <- new.reg.data %>%
+  left_join(mob[,c(1,2,3)], by = c("State" = "State"))
+
+new.pca.data.2 <- new.reg.data %>%
+  left_join(mob[,c(1,2,4)], by = c("State" = "State"))
+
+new.pca.data.3 <- new.reg.data %>%
+  left_join(mob[,c(1,2,5)], by = c("State" = "State"))
+
+new.pca.data.4 <- new.reg.data %>%
+  left_join(mob[,c(1,2,6)], by = c("State" = "State"))
+
+new.pca.data.5 <- new.reg.data %>%
+  left_join(mob[,c(1,2,7)], by = c("State" = "State"))
+
+new.pca.data.6 <- new.reg.data %>%
+  left_join(mob[,c(1,2,8)], by = c("State" = "State"))
+
+new.pca.data.7 <- new.reg.data %>%
+  left_join(mob[,c(1,2,9)], by = c("State" = "State"))
+```
+
+
+```{r}
+## Join with pred avg mob
+new.pca.data.pct <- new.reg.data %>%
+  left_join(mob[,c(1,2)], by = c("State" = "State")) %>%
+  left_join(new.mob, by = c("State" = "State", "Date" = "Date"))    # for moving avg
+
+```
+
+### Change column orders for rbind with seen data
+
+```{r}
+new.pca.data.1a <- new.pca.data.1 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.1a)[3] <- "residential_mob_weekly"
+
+new.pca.data.2a <- new.pca.data.2 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.2a)[3] <- "residential_mob_weekly"
+
+new.pca.data.3a <- new.pca.data.3 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.3a)[3] <- "residential_mob_weekly"
+
+new.pca.data.4a <- new.pca.data.4 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.4a)[3] <- "residential_mob_weekly"
+
+new.pca.data.5a <- new.pca.data.5 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.5a)[3] <- "residential_mob_weekly"
+
+new.pca.data.6a <- new.pca.data.6 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.6a)[3] <- "residential_mob_weekly"
+
+new.pca.data.7a <- new.pca.data.7 %>%
+  select(5,7,10,9,8)
+colnames(new.pca.data.7a)[3] <- "residential_mob_weekly"
+```
+
+```{r}
+new.pca.data.pct <- new.pca.data.pct %>%
+  select(5,7,10,9,8)
+```
+
+### Calculate PCA
+
+```{r}
+dine.in.pct.pca <- prcomp(rbind(pca.data.1, new.pca.data.1a, new.pca.data.2a, new.pca.data.3a, 
+                                new.pca.data.4a, new.pca.data.5a, new.pca.data.6a, 
+                                new.pca.data.7a, new.pca.data.pct), 
+                      scale = TRUE)
+fviz_eig(dine.in.pct.pca)
+```
+
+```{r}
+fviz_pca_var(dine.in.pct.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+### Run model on seen PCA data
+
+```{r}
+eig.val <- get_eigenvalue(dine.in.pct.pca)
+#eig.val
+  
+# Results for Variables
+res.var <- get_pca_var(dine.in.pct.pca)
+
+# Results for individuals
+res.ind <- get_pca_ind(dine.in.pct.pca)
+```
+
+```{r}
+pca.cop.data <-as.data.frame(res.ind$coord )  # 1-966 row: seen, 967-1702: new
+  
+pcr.data <- pca.cop.data[1:966,]  %>%
+  cbind(Dine_In_2020_weekly_pct =reg.data$Dine_In_2020_weekly_pct)
+
+pcr.model <- lm(Dine_In_2020_weekly_pct ~., data = pcr.data)
+summary(pcr.model)
+```
+
+
+### Predict on new PCA data for 5 mob level columns
+
+```{r}
+pred.1.month <- predict(pcr.model, pca.cop.data[967:2438,])
+pred.data <- data.frame(State = new.data$State,
+                        Date = new.data$Date,
+                        pred.avg = pred.1.month[1289:1472])  # pred pct with avg mob
+```
+
+
+
+### Plot for Prediction
+
+```{r}
+plot.data.sub.1 <- seen.data[, c(1,2,11)]
+plot.data.sub.2 <- pred.data
+colnames(plot.data.sub.2)[3] <- "Dine_In_2020_weekly_pct"
+
+plot.data.2 <- rbind(plot.data.sub.1, plot.data.sub.2) %>%
+  arrange(State, Date)
+
+write.table(plot.data.2, "dine_in_pct_plot_data.csv", col.names = T, sep = ",")
+```
+
+```{r}
+# E.G. New York
+plot.data.2 %>% 
+  filter( State == "NY" & Date <= as.Date("2020-7-6")) %>%
+  plot_ly(x = ~Date, y = ~Dine_In_2020_weekly_pct, name = 'Real Data', type = 'scatter', mode = 'lines') %>%
+  add_trace(data = plot.data.2[plot.data.2$Date >= as.Date("2020-7-6") &
+                                     plot.data.2$State == "NY",],
+            y = ~Dine_In_2020_weekly_pct, name = 'Predict', mode = 'lines') %>%
+  layout(title = 'Prediction of CA Dine-in Revenue Percentage in 4 Weeks',
+         xaxis = list(title = "Date",
+                      showgrid = FALSE),
+         yaxis = list(title = "Dine-in Revenues Percentage",
+                      showgrid = FALSE))
+```
+
+```{r, fig.height=8, fig.width = 10}
+# Overview for all states
+ggplot(data = plot.data.2, aes(x = Date, y = Dine_In_2020_weekly_pct)) +
+  geom_line() + 
+  geom_vline(xintercept = as.Date("2020-7-13"),linetype="dotted") +
+  facet_wrap(~State)
+```
+
+## Use PCA and Regression for Predicting 2020 Total Amount in 4 weeks
+
+```{r}
+colnames(reg.data)
+pca.data.2 <- reg.data[,-c(1,2,4:8)] 
+colnames(pca.data.2)
+str(pca.data.2)
+```
+
+
+```{r, warning= F}
+new.pca.data.1b <- new.reg.data %>%
+  left_join(mob[,c(1,2,3)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.1b)[3] <- "residential_mob_weekly"
+
+new.pca.data.2b <- new.reg.data %>%
+  left_join(mob[,c(1,2,4)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.2b)[3] <- "residential_mob_weekly"
+
+new.pca.data.3b <- new.reg.data %>%
+  left_join(mob[,c(1,2,5)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.3b)[3] <- "residential_mob_weekly"
+
+new.pca.data.4b <- new.reg.data %>%
+  left_join(mob[,c(1,2,6)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.4b)[3] <- "residential_mob_weekly"
+
+new.pca.data.5b <- new.reg.data %>%
+  left_join(mob[,c(1,2,7)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.5b)[3] <- "residential_mob_weekly"
+
+new.pca.data.6b <- new.reg.data %>%
+  left_join(mob[,c(1,2,8)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.6b)[3] <- "residential_mob_weekly"
+
+new.pca.data.7b <- new.reg.data %>%
+  left_join(mob[,c(1,2,9)], by = c("State" = "State")) %>%
+  select(3,7,10,9,8)
+colnames(new.pca.data.7b)[3] <- "residential_mob_weekly"
+
+new.pca.data.8b <- new.reg.data %>%
+  left_join(mob[,c(1,2)], by = c("State" = "State")) %>%
+  left_join(new.mob, by = c("State" = "State", "Date" = "Date")) %>%
+  select(3,7,10,9,8)
+ 
+```
+
+
+### Calculate PCA
+
+```{r}
+amount.2020.pca <- prcomp(rbind(pca.data.2, new.pca.data.1b, new.pca.data.2b, 
+                            new.pca.data.3b, new.pca.data.4b,new.pca.data.5b,
+                            new.pca.data.6b, new.pca.data.7b, new.pca.data.8b), 
+                      scale = TRUE)
+fviz_eig(amount.2020.pca )
+```
+
+```{r}
+fviz_pca_var(amount.2020.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+### Run model on seen PCA data
+
+```{r}
+# Results for Variables
+res.var <- get_pca_var(amount.2020.pca )
+
+# Results for individuals
+res.ind <- get_pca_ind(amount.2020.pca )
+```
+
+```{r}
+pca.cop.data.2 <-as.data.frame(res.ind$coord )  # 1-966 row: seen, 967-1702: new
+  
+pcr.data.2 <- pca.cop.data.2[1:966,]  %>%
+  cbind(Amount_2020_weekly =reg.data$Amount_2020_weekly)
+
+pcr.model.2 <- lm(Amount_2020_weekly ~., data = pcr.data.2)
+```
+
+
+### Predict on new PCA data for 5 mob columns
+
+```{r}
+pred.1.month.2 <- predict(pcr.model.2, pca.cop.data.2[967:2438,])
+pred.data.2 <- data.frame(State = new.data$State,
+                        Date = new.data$Date,
+                        pred.1 = pred.1.month.2[1:184],
+                        pred.2 = pred.1.month.2[185:368],
+                        pred.3 = pred.1.month.2[369:552],
+                        pred.4 = pred.1.month.2[553:736],
+                        pred.5 = pred.1.month.2[737:920],
+                        pred.6 = pred.1.month.2[921:1104],
+                        pred.7 = pred.1.month.2[1105:1288],
+                        pred.8 = pred.1.month.2[1289:1472])
+# exp transformation
+for (i in 3:10) {
+  pred.data.2[,i] = exp( pred.data.2[,i])
+}
+```
+
+
+
+### Plot for Real Data & 4-week Prediction values for Total Amount
+
+```{r}
+sub.1.2 <- weekly.data[,c(1,2,5)] %>%
+  filter(Date < as.Date("2020-7-13")) %>%  # real known data
+  mutate(pred.1 = 0, 
+         pred.2 =0, 
+         pred.3 = 0,
+         pred.4 = 0,
+         pred.5 = 0,
+         pred.6 = 0,
+         pred.7 = 0,
+         pred.8 = 0) %>%
+  select(1,2,4:11,3)   # change column orders
+
+sub.2.2 <- pred.data.2 %>%
+  mutate(Amount_2020_weekly = 0)  # for pred dataset, real = 0
+
+plot.data.amount <- rbind(sub.1.2, sub.2.2) %>%
+  arrange(State, Date)
+
+```
+
+
+
+```{r}
+sub.jul.6.amount <- plot.data.amount %>%
+  filter(Date == as.Date("2020-7-6"))
+for (i in 3:10) {
+  sub.jul.6.amount[,i] = sub.jul.6.amount[,11]  # for july 6, pred data = real data -> area start from a single point
+}
+
+plot.data.amount.2 <- plot.data.amount %>%
+  filter(Date != as.Date("2020-7-6")) %>%
+  rbind(sub.jul.6.amount) %>%
+  arrange(State, Date)
+
+#write.table(plot.data.amount.2, "amount_2020_plot_data.csv", col.names = T, sep = ",")
+```
+
+```{r}
+plot.data.amount.2 %>% 
+  filter( State == "CA" & Date <= as.Date("2020-7-6")) %>%
+  plot_ly(x = ~Date, y = ~Amount_2020_weekly, name = 'Real Data', type = 'scatter', mode = 'lines') %>%
+  add_trace(data = plot.data.amount.2[plot.data.amount.2$Date >= as.Date("2020-7-6") &
+                                     plot.data.amount.2$State == "CA",],
+            y = ~pred.2, name = 'Best Case', mode = 'none', fill = 'tozeroy', fillcolor = '#99e699') %>%    
+  add_trace(y = ~pred.3, name = 'Base Case', mode = 'none', fill = 'tozeroy', fillcolor = '#6699ff') %>% 
+  add_trace(y = ~pred.5, name = 'Worst Case', mode = 'none', fill = 'tozeroy', fillcolor = '#ff884d') %>% 
+  add_trace(y = ~pred.6, name = '', mode = 'none', fill = 'tozeroy', fillcolor = 'white')  %>%
+  add_trace(y = ~pred.8, name = 'Average', mode = 'lines') %>%
+  layout(title = 'Prediction of NY Total Revenue in 4 Weeks',
+         xaxis = list(title = "Date",
+                      showgrid = FALSE),
+         yaxis = list(title = "Total Revenues",
+                      showgrid = FALSE))
+```
+
+
+```{r}
+us.plot.data.amount <- plot.data.amount.2 %>%
+  group_by(Date) %>%
+  summarize(pred.1 = sum(pred.1),
+            pred.2 = sum(pred.2),
+            pred.3 = sum(pred.3),
+            pred.4 = sum(pred.4),
+            pred.5 = sum(pred.5),
+            pred.6 = sum(pred.6),
+            pred.7 = sum(pred.7),
+            pred.8 = sum(pred.8),
+            Amount_2020_weekly = sum(Amount_2020_weekly))
+```
+
+```{r}
+us.plot.data.amount %>% 
+  filter(Date <= as.Date("2020-7-6")) %>%
+  plot_ly(x = ~Date, y = ~Amount_2020_weekly, name = 'Real Data', type = 'scatter', mode = 'lines') %>%
+  add_trace(data = us.plot.data.amount [us.plot.data.amount $Date >= as.Date("2020-7-6"),],
+            y = ~pred.2, name = 'Best Case', mode = 'none', fill = 'tozeroy', fillcolor = '#99e699') %>%    
+  add_trace(y = ~pred.3, name = 'Base Case', mode = 'none', fill = 'tozeroy', fillcolor = '#6699ff') %>% 
+  add_trace(y = ~pred.5, name = 'Worst Case', mode = 'none', fill = 'tozeroy', fillcolor = '#ff884d') %>% 
+  add_trace(y = ~pred.6, name = '', mode = 'none', fill = 'tozeroy', fillcolor = 'white')  %>%
+  add_trace(y = ~pred.8, name = 'Average', mode = 'lines')%>%
+  layout(title = 'Prediction of US Total Revenue in 4 Weeks',
+         xaxis = list(title = "Date",
+                      showgrid = FALSE),
+         yaxis = list(title = "Total Revenues",
+                      showgrid = FALSE))
+```
+
+
+
+# Prediction for 3, 6, 8 Months
+
+## Cut Level for defining scenarios
+
+```{r}
+quantile.data <- weekly.data %>%
+  group_by(State) %>%
+  summarize(confirmed.qt25 = quantile(confirmed.add_weekly,0.2),
+            confirmed.qt75 = quantile(confirmed.add_weekly,0.8),
+            wei.qt25 = quantile(WEI,0.25),
+            wei.qt75 = quantile(WEI,0.75))
+```
+
+
+```{r}
+quantile.good <-  weekly.data %>%
+  filter(Date <= as.Date("2020-3-9")) %>%
+  group_by(State) %>%  
+  summarize(confirmed.good = quantile(confirmed.add_weekly,0.5),
+            wei.good = quantile(WEI,0.5))
+            
+quantile.bad <-  weekly.data %>%
+  filter(Date > as.Date("2020-3-9")) %>%
+  group_by(State) %>%  
+  summarize(confirmed.bad = quantile(confirmed.add_weekly,0.5),
+            wei.bad = quantile(WEI,0.5))
+
+quantile.data <- cbind(quantile.good, quantile.bad)[,-4]
+
+#write.table(quantile.data, "long_term_covid_econ.csv", col.names = T, sep = ",")
+```
+
+
+## Prediction for Total Revenues
+
+**Totally 7 scenarios:**
+----------------------------------
+Month    |  COVID-19  | Economy |
+----------------------------------
+3 Months |  Bad       | Bad     |
+---------------------------------
+6 Months |  Bad       | Bad     |
+---------------------------------
+6 Months |  Good      | Bad     |
+---------------------------------
+6 Months |  Good      | Good    |
+---------------------------------
+18 Months|  Bad       | Bad     |
+---------------------------------
+18 Months|  Good      | Bad     |
+---------------------------------
+18 Months|  Good      | Good    |
+
+```{r}
+# new data for 3 month, 6 & 18 are similar
+new.data.3month <- rev.sum[,c(1,2,5,6)] %>%
+  filter(Week == as.Date("2022-01-24")) %>%   # 2020-10-26, 2021-4-26, 2022-01-24
+  cbind(quantile.data[,c(4,5)]) %>%
+  left_join(mob, by = c("State"="State")) %>%
+  mutate(Dine_In_2019_weekly_pct = Dine_In_2019_weekly/Amount_2019_weekly)
+
+colnames(new.data.3month )[c(1,5,6)] = c("Date", "confirmed.add_weekly", "WEI")
+
+for (i in 3:4) {
+  new.data.3month[,i] = log(new.data.3month[,i])
+}
+```
+
+
+```{r}
+new.pca.data.1c <- new.data.3month[,c(3,5,9,7,6)]
+colnames(new.pca.data.1c)[3] <- "residential_mob_weekly"
+
+new.pca.data.2c <- new.data.3month[,c(3,5,10,7,6)]
+colnames(new.pca.data.2c)[3] <- "residential_mob_weekly"
+
+new.pca.data.3c <- new.data.3month[,c(3,5,11,7,6)]
+colnames(new.pca.data.3c)[3] <- "residential_mob_weekly"
+
+new.pca.data.4c <- new.data.3month[,c(3,5,12,7,6)]
+colnames(new.pca.data.4c)[3] <- "residential_mob_weekly"
+
+new.pca.data.5c <- new.data.3month[,c(3,5,13,7,6)]
+colnames(new.pca.data.5c)[3] <- "residential_mob_weekly"
+
+new.pca.data.18month.bad.bad <- rbind(new.pca.data.1c, new.pca.data.2c, new.pca.data.3c,
+                                     new.pca.data.4c, new.pca.data.5c)
+
+write.table(new.pca.data.18month.bad.bad, "new.pca.data.18month.bad.bad.csv", col.names = T, row.names = F, sep = ",")
+```
+
+### Similarly perform on 6 & 18 months (directly import genrated data here)
+
+**Data sets are in the folder `PCA Data`**
+
+```{r}
+new.pca.data.6month.bad.bad <-  read.csv("new.pca.data.6month.bad.bad.csv")
+new.pca.data.6month.good.bad <- read.csv("new.pca.data.6month.good.bad.csv")
+new.pca.data.6month.good.good <- read.csv("new.pca.data.6month.good.good.csv")
+new.pca.data.18month.bad.bad <- read.csv("new.pca.data.18month.bad.bad.csv")
+new.pca.data.18month.good.bad <- read.csv("new.pca.data.18month.good.bad.csv")
+new.pca.data.18month.good.good <- read.csv("new.pca.data.18month.good.good.csv")
+```
+
+
+
+### Calculate PCA
+
+```{r}
+amount.2020.3month.pca <- prcomp(rbind(pca.data.2, 
+                                       new.pca.data.3month.bad.bad,
+                                       new.pca.data.6month.bad.bad, 
+                                       new.pca.data.6month.good.bad,
+                                       new.pca.data.6month.good.good,
+                                       new.pca.data.18month.bad.bad,
+                                       new.pca.data.18month.good.bad,
+                                       new.pca.data.18month.good.good), 
+                      scale. = TRUE)
+fviz_eig(amount.2020.3month.pca )
+```
+
+```{r}
+fviz_pca_var(amount.2020.3month.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+### Run model on seen PCA data
+
+```{r}
+# Results for individuals
+res.ind <- get_pca_ind(amount.2020.3month.pca )
+
+```
+
+```{r}
+pca.cop.data.3 <-as.data.frame(res.ind$coord )  # 1-966 row: seen, 967-1702: new
+  
+pcr.data.3 <- pca.cop.data.3[1:966,]  %>%
+  cbind(Amount_2020_weekly =reg.data$Amount_2020_weekly)
+
+pcr.model.3 <- lm(Amount_2020_weekly ~., data = pcr.data.3)
+summary(pcr.model.3)
+```
+
+#### Save PCA comp result
+
+```{r}
+#write.table(pcr.data.3, "pca_amount_historical_with_y.csv", col.names = T, sep = ",")
+```
+
+
+### Predict on PCA data for 5 mob columns, for different scenario
+
+#### E.G. 3 month prediction
+
+```{r}
+pred.3month.1 <- predict(pcr.model.3, pca.cop.data.3[967:1196,])
+    # 967:1196,    1197:1426, 1427:1656, 1657:1886,    1887:2116, 2117:2346, 2347:2576
+pred.3month.amount <- data.frame(State = new.data.3month$State,
+                        Date =  rep(as.Date("2020-10-26"),46),  #new.data.3month$Date,   # change!!!!
+                        pred.1 = pred.3month.1[1:46],
+                        pred.2 = pred.3month.1[47:92],
+                        pred.3 = pred.3month.1[93:138],
+                        pred.4 = pred.3month.1[139:184],
+                        pred.5 = pred.3month.1[185:230])
+# exp transformation
+for (i in 3:7) {
+  pred.3month.amount[,i] = exp(pred.3month.amount[,i])
+}
+
+pred.3month.amount.bb <- pred.3month.amount  # CHANGE!
+#write.table(pred.18month.amount.gg, "pred_amount_18month_good_good.csv", row.names = F, col.names = T, sep = ",")
+                   # CHANGE
+```
+
+
+
+### Plot for Real Data & 4-week Prediction values for Total Amount
+
+```{r}
+sub.1.3 <- weekly.data[,c(1,2,5)] %>%
+  filter(Date < as.Date("2020-7-13")) %>%  # real known data
+  mutate(pred.1 = 0, 
+         pred.2 =0, 
+         pred.3 = 0,
+         pred.4 = 0,
+         pred.5 = 0) %>%
+  select(1,2,4:8,3)   # change column orders
+
+sub.2.3 <-  pred.3month.amount.bb %>%    ## CHANGE!
+  mutate(Amount_2020_weekly = 0)  # for pred dataset, real = 0
+
+plot.data.amount.3mon <- rbind(sub.1.3, sub.2.3) %>%
+  arrange(State, Date)
+
+```
+
+
+```{r}
+sub.jul.6.amount.3mon <- plot.data.amount.3mon %>%
+  filter(Date == as.Date("2020-7-6"))
+for (i in 3:7) {
+  sub.jul.6.amount.3mon[,i] = sub.jul.6.amount.3mon[,8]  # for july 6, pred data = real data -> area start from a single point
+}
+
+plot.data.amount.3mon <- plot.data.amount.3mon %>%
+  filter(Date != as.Date("2020-7-6")) %>%
+  rbind(sub.jul.6.amount.3mon) %>%
+  arrange(State, Date)
+
+#write.table(plot.data.amount.3mon, "amount_2020_plot_data_3month_bad_bad.csv", col.names = T, row.names = F,sep = ",")
+```
+
+```{r}
+plot.data.amount.3mon %>% 
+  filter( State == "NY" & Date <= as.Date("2020-7-6")) %>%
+  plot_ly(x = ~Date, y = ~Amount_2020_weekly, name = 'Real Data', type = 'scatter', mode = 'lines') %>%
+  add_trace(data = plot.data.amount.3mon[plot.data.amount.3mon$Date >= as.Date("2020-7-6") &
+                                     plot.data.amount.3mon$State == "NY",],
+            y = ~pred.1, name = 'Invalid Case', mode = 'none', fill = 'tozeroy', fillcolor = '#808080') %>%  
+  add_trace(y = ~pred.2, name = '25% - 50%', mode = 'none', fill = 'tozeroy', fillcolor = '#99e699') %>% 
+  add_trace(y = ~pred.3, name = '50% - 75%', mode = 'none', fill = 'tozeroy', fillcolor = '#6699ff') %>% 
+  add_trace(y = ~pred.4, name = '75% - 90%', mode = 'none', fill = 'tozeroy', fillcolor = '#ff884d') %>% 
+  add_trace(y = ~pred.5, name = '', mode = 'none', fill = 'tozeroy', fillcolor = 'white')  %>%
+  #add_trace(y = ~pred.8, name = 'Average', mode = 'lines') %>%
+  layout(title = 'Prediction of Total Revenue in 3 Month',
+         xaxis = list(title = "Date",
+                      showgrid = FALSE),
+         yaxis = list(title = "Total Revenues",
+                      showgrid = FALSE))
+```
+
+### Similarily, process data of `Total Amount` for other scenarios, which can be plotted with both 4 week and long term predictions.
+
+**The final data set can be found as `long_term_amount_plot_data_all.csv` in the folder `Prediction Results`** 
+
+
+
+## Dine-in pct
+
+```{r}
+# 3 month: quantile.data[,c(4,5)]
+# 6 month: quantile.data[,c(4,5)],  quantile.data[,c(2,5)]
+
+new.data.3month <- rev.sum[,c(1,2,5,6)] %>%
+  filter(Week == as.Date("2020-10-26")) %>%   # 2020-10-26, 2021-4-26, 2022-01-24
+  cbind(quantile.data[,c(4,5)]) %>%   # change
+  left_join(mob, by = c("State"="State")) %>%
+  mutate(Dine_In_2019_weekly_pct = Dine_In_2019_weekly/Amount_2019_weekly)
+
+colnames(new.data.3month )[c(1,5,6)] = c("Date", "confirmed.add_weekly", "WEI")
+
+for (i in 3:4) {
+  new.data.3month[,i] = log(new.data.3month[,i])
+}
+
+colnames(new.data.3month)
+```
+
+
+```{r}
+new.pca.data.1c <- new.data.3month[,c(15,5,9,7,6)]
+colnames(new.pca.data.1c)[3] <- "residential_mob_weekly"
+
+new.pca.data.2c <- new.data.3month[,c(15,5,10,7,6)]
+colnames(new.pca.data.2c)[3] <- "residential_mob_weekly"
+
+new.pca.data.3c <- new.data.3month[,c(15,5,11,7,6)]
+colnames(new.pca.data.3c)[3] <- "residential_mob_weekly"
+
+new.pca.data.4c <- new.data.3month[,c(15,5,12,7,6)]
+colnames(new.pca.data.4c)[3] <- "residential_mob_weekly"
+
+new.pca.data.5c <- new.data.3month[,c(15,5,13,7,6)]
+colnames(new.pca.data.5c)[3] <- "residential_mob_weekly"
+
+new.pca.data.3month.bad.bad <- rbind(new.pca.data.1c, new.pca.data.2c, new.pca.data.3c,
+                                     new.pca.data.4c, new.pca.data.5c)
+
+#write.table(new.pca.data.3month.bad.bad, "pct.new.pca.data.3month.bad.bad.csv", col.names = T, sep = ",")
+```
+
+
+### Similarly perform on 6 & 18 months (directly import genrated data here)
+
+**Data sets are in the folder `PCA Data`**
+
+```{r}
+new.pca.data.6month.bad.bad <-  read.csv("pct.new.pca.data.6month.bad.bad.csv")
+new.pca.data.6month.good.bad <- read.csv("pct.new.pca.data.6month.good.bad.csv")
+new.pca.data.6month.good.good <- read.csv("pct.new.pca.data.6month.good.good.csv")
+new.pca.data.18month.bad.bad <- read.csv("pct.new.pca.data.18month.bad.bad.csv")
+new.pca.data.18month.good.bad <- read.csv("pct.new.pca.data.18month.good.bad.csv")
+new.pca.data.18month.good.good <- read.csv("pct.new.pca.data.18month.good.good.csv")
+```
+
+
+
+### Calculate PCA
+
+```{r}
+pct.2020.3month.pca <- prcomp(rbind(pca.data.1,
+                                       new.pca.data.3month.bad.bad,
+                                       new.pca.data.6month.bad.bad, 
+                                       new.pca.data.6month.good.bad,
+                                       new.pca.data.6month.good.good,
+                                       new.pca.data.18month.bad.bad,
+                                       new.pca.data.18month.good.bad,
+                                       new.pca.data.18month.good.good), 
+                      scale. = T)
+fviz_eig(pct.2020.3month.pca )
+```
+
+```{r}
+fviz_pca_var(pct.2020.3month.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+             )
+```
+
+### Run model on seen PCA data
+
+```{r}
+# Results for individuals
+res.ind <- get_pca_ind(pct.2020.3month.pca )
+
+
+get_pca_var(amount.2020.3month.pca)$contrib
+get_pca_var(pct.2020.3month.pca)$contrib
+```
+
+```{r}
+pca.cop.data.3 <-as.data.frame(res.ind $coord )  # 1-966 row: seen, 967-1702: new
+  
+pcr.data.3 <- pca.cop.data.3[1:966,]  %>%
+  cbind(Dine_In_2020_weekly_pct =reg.data$Dine_In_2020_weekly_pct)
+
+pcr.model.3 <- lm(Dine_In_2020_weekly_pct ~., data = pcr.data.3)
+summary(pcr.model.3)
+
+```
+
+#### Save PCA comp result
+
+```{r}
+#write.table(pcr.data.3, "pca_amount_historical_with_y.csv", col.names = T, sep = ",")
+```
+
+
+### Predict on new PCA data for 5 mob columns
+
+```{r}
+pred.3month.1 <- predict(pcr.model.3, pca.cop.data.3[1197:1426,])
+    # 967:1196,    1197:1426, 1427:1656, 1657:1886,      1887:2116, 2117:2346, 2347:2576
+pred.3month.pct <- data.frame(State = new.data.3month$State,
+                        Date =  rep(as.Date("2020-10-26"),46),  #new.data.3month$Date,
+                        pred.1 = pred.3month.1[1:46],
+                        pred.2 = pred.3month.1[47:92],
+                        pred.3 = pred.3month.1[93:138],
+                        pred.4 = pred.3month.1[139:184],
+                        pred.5 = pred.3month.1[185:230])
+
+
+pred.6month.pct.bb <- pred.3month.pct
+#write.table(pred.6month.pct.bb, "pred_pct_6month_bad_bad_new.csv", row.names = F, col.names = T, sep = ",")
+```
+
+
+
+### Plot for Real Data & 4-week Prediction values for Total Amount
+
+```{r}
+sub.1.3 <- weekly.data[,c(1,2,11)] %>%
+  filter(Date < as.Date("2020-7-13")) %>%  # real known data
+  mutate(pred.1 = 0, 
+         pred.2 =0, 
+         pred.3 = 0,
+         pred.4 = 0,
+         pred.5 = 0) %>%
+  select(1,2,4:8,3)   # change column orders
+
+sub.2.3 <-  pred.3month.pct.bb  %>%   # change ##
+  mutate(Dine_In_2020_weekly_pct = 0)  # for pred dataset, real = 0
+
+plot.data.pct.3mon <- rbind(sub.1.3, sub.2.3) %>%
+  arrange(State, Date)
+
+```
+
+
+```{r}
+sub.jul.6.pct.3mon <- plot.data.pct.3mon %>%
+  filter(Date == as.Date("2020-7-6"))
+for (i in 3:7) {
+  sub.jul.6.pct.3mon[,i] = sub.jul.6.pct.3mon[,8]  # for july 6, pred data = real data -> area start from a single point
+}
+
+plot.data.pct.3mon <- plot.data.pct.3mon %>%
+  filter(Date != as.Date("2020-7-6")) %>%
+  rbind(sub.jul.6.pct.3mon) %>%
+  arrange(State, Date)
+
+#write.table(plot.data.pct.3mon, "pct_2020_plot_data_3month_bad_bad_new.csv", col.names = T, row.names = F, sep = ",")
+```
+
+```{r}
+plot.data.pct.3mon %>% 
+  filter( State == "CA" & Date <= as.Date("2020-7-6")) %>%
+  plot_ly(x = ~Date, y = ~Dine_In_2020_weekly_pct, name = 'Real Data', type = 'scatter', mode = 'lines') %>%
+  add_trace(data = plot.data.pct.3mon[plot.data.pct.3mon$Date >= as.Date("2020-7-6") &
+                                     plot.data.pct.3mon$State == "CA",],
+            y = ~pred.2, name = 'Predict', mode = 'lines') %>%
+  add_trace( y = ~pred.3, name = 'Predict', mode = 'lines') %>%
+  add_trace( y = ~pred.4, name = 'Predict', mode = 'lines') %>%
+  layout(title = 'Prediction of CA Dine-in Revenue Percentage in 3 Months',
+         xaxis = list(title = "Date",
+                      showgrid = FALSE),
+         yaxis = list(title = "Dine-in Revenues Percentage",
+                      showgrid = FALSE))
+```
+
+
+
+### Similarily, process data of `Dine-in Percentage` for other scenarios, which can be plotted with both 4 week and long term predictions.
+
+**The final data set can be found as `long_term_pct_plot_data_all.csv` in the folder `Prediction Results`** 
+
+
